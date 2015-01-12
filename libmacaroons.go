@@ -39,8 +39,8 @@ func (m libMacaroon) WithThirdPartyCaveat(rootKey []byte, caveatId string, loc s
 	return m, nil
 }
 
-func (m libMacaroon) Bind(discharge Macaroon) (Macaroon, error) {
-	m1, err := m.PrepareForRequest(discharge.(libMacaroon).Macaroon)
+func (m libMacaroon) Bind(primary Macaroon) (Macaroon, error) {
+	m1, err := primary.(libMacaroon).PrepareForRequest(m.Macaroon)
 	if err != nil {
 		return nil, err
 	}

@@ -11,12 +11,12 @@ type goMacaroon struct {
 	*macaroon.Macaroon
 }
 
-func (m goMacaroon) Clone() goMacaroon {
+func (m goMacaroon) clone() goMacaroon {
 	return goMacaroon{m.Macaroon.Clone()}
 }
 
 func (m goMacaroon) WithFirstPartyCaveat(caveatId string) (Macaroon, error) {
-	m = m.Clone()
+	m = m.clone()
 	if err := m.Macaroon.AddFirstPartyCaveat(caveatId); err != nil {
 		return nil, err
 	}
@@ -24,17 +24,17 @@ func (m goMacaroon) WithFirstPartyCaveat(caveatId string) (Macaroon, error) {
 }
 
 func (m goMacaroon) WithThirdPartyCaveat(rootKey []byte, caveatId string, loc string) (Macaroon, error) {
-	m = m.Clone()
+	m = m.clone()
 	if err := m.Macaroon.AddThirdPartyCaveat(rootKey, caveatId, loc); err != nil {
 		return nil, err
 	}
 	return m, nil
 }
 
-func (m goMacaroon) Bind(discharge Macaroon) (Macaroon, error) {
-	discharge1 := discharge.(goMacaroon).Clone()
-	discharge1.Macaroon.Bind(m.Signature())
-	return discharge1, nil
+func (m goMacaroon) Bind(primary Macaroon) (Macaroon, error) {
+	m = m.clone()
+	m.Macaroon.Bind(primary.Signature())
+	return m, nil
 }
 
 func (m goMacaroon) Verify(rootKey []byte, check func(caveat string) error, discharges []Macaroon) error {

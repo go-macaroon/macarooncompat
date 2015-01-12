@@ -154,7 +154,6 @@ func (*suite) TestSignature(c *gc.C) {
 		c.Logf("test %d: %s", i, test.about)
 		checkConsistency(c, func(pkg mcompat.Package) (interface{}, error) {
 			m := makeMacaroon(pkg, test.macaroon)
-			c.Logf("made macaroon %s with sig %x", macStr(m), m.Signature())
 			if test.expectSignature != "" {
 				c.Check(fmt.Sprintf("%x", m.Signature()), gc.Equals, test.expectSignature)
 			}
@@ -230,7 +229,7 @@ func makeMacaroons(pkg mcompat.Package, mspecs []macaroonSpec) (
 	discharges := macaroons[1:]
 	for i := range discharges {
 		var err error
-		discharges[i], err = primary.Bind(discharges[i])
+		discharges[i], err = discharges[i].Bind(primary)
 		if err != nil {
 			panic(err)
 		}

@@ -28,4 +28,7 @@ var Implementations = []struct {
 }, {
 	Name: "libmacaroons",
 	Pkg:  libMacaroonPkg{},
+}, {
+	Name: "jsmacaroon",
+	Pkg:  jsMacaroonPkg{},
 }}
