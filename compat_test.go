@@ -10,10 +10,11 @@ import (
 	"io"
 	"testing"
 
-	mcompat "github.com/go-macaroon/macarooncompat"
 	jc "github.com/juju/testing/checkers"
 	gc "gopkg.in/check.v1"
 	"gopkg.in/macaroon.v1"
+
+	mcompat "github.com/go-macaroon/macarooncompat"
 )
 
 type suite struct {
@@ -615,30 +616,33 @@ func (*suite) TestSerialization(c *gc.C) {
 		}
 	}
 	for i, test := range serializationTests {
-		c.Logf("test %d: %s", i, test.about)
-		checkConsistency(c, func(pkg mcompat.Package) (interface{}, error) {
+		c.Logf("\ntest %d: %s", i, test.about)
+		for _, impl := range mcompat.Implementations {
+			c.Logf("check %s", impl.Name)
+			pkg := impl.Pkg
 			m := makeMacaroon(pkg, test.macaroon)
 			data, err := m.MarshalJSON()
 			c.Assert(err, gc.IsNil)
 			c.Logf("macaroon data:\n%s", data)
 			c.Logf("---- unmarshal checks {")
 			// Check the marshaled form can be unmarshaled by all the other packages.
+			// and that it can be marshaled back and eventually produces the
+			// same representation for all packages.
 			checkConsistency(c, func(pkg mcompat.Package) (interface{}, error) {
 				m, err := pkg.UnmarshalJSON(data)
 				c.Assert(err, gc.IsNil, gc.Commentf("data: %s", data))
-				return fmt.Sprintf("%x", m.Signature()), nil
+				data, err := m.MarshalJSON()
+				c.Assert(err, gc.IsNil)
+
+				var gom *macaroon.Macaroon
+				err = json.Unmarshal(data, &gom)
+				c.Assert(err, gc.IsNil)
+				data, err = gom.MarshalJSON()
+				c.Assert(err, gc.IsNil)
+				return string(data), nil
 			})
 			c.Logf("}")
-			// Marshal back through the Go implementation
-			// so that we can check the consistency of the result
-			// with all packages.
-			var gom *macaroon.Macaroon
-			err = json.Unmarshal(data, &gom)
-			c.Assert(err, gc.IsNil)
-			data, err = gom.MarshalJSON()
-			c.Assert(err, gc.IsNil)
-			return string(data), nil
-		})
+		}
 	}
 }
 
