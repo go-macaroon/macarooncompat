@@ -37,12 +37,12 @@ func (m goMacaroon) Bind(primary Macaroon) (Macaroon, error) {
 	return m, nil
 }
 
-func (m goMacaroon) Verify(rootKey []byte, check func(caveat string) error, discharges []Macaroon) error {
+func (m goMacaroon) Verify(rootKey []byte, check Checker, discharges []Macaroon) error {
 	discharges1 := make([]*macaroon.Macaroon, len(discharges))
 	for i, m := range discharges {
 		discharges1[i] = m.(goMacaroon).Macaroon
 	}
-	return m.Verify(rootKey, check, discharges)
+	return m.Macaroon.Verify(rootKey, check.Check, discharges1)
 }
 
 type goMacaroonPackage struct{}

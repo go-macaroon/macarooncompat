@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"os/exec"
+	"strings"
 )
 
 type jsMacaroonPkg struct{}
@@ -18,7 +19,7 @@ func (jsMacaroonPkg) New(rootKey []byte, id, loc string) (Macaroon, error) {
 	m := &jsMacaroon{
 		name: newName("m"),
 	}
-	expr := fmt.Sprintf(`%s = state.macaroon.newMacaroon(%s, %s, %s)`, m.name, jsBits(rootKey), jsString(id), jsString(loc))
+	expr := fmt.Sprintf(`%s = state.macaroon.newMacaroon(%s, %s, %s)`, m.name, jsBits(rootKey), jsVal(id), jsVal(loc))
 	if err := jsEval(expr, nil); err != nil {
 		return nil, err
 	}
@@ -26,7 +27,14 @@ func (jsMacaroonPkg) New(rootKey []byte, id, loc string) (Macaroon, error) {
 }
 
 func (jsMacaroonPkg) UnmarshalJSON(data []byte) (Macaroon, error) {
-	return nil, fmt.Errorf("unimplemented")
+	m := &jsMacaroon{
+		name: newName("m"),
+	}
+	expr := fmt.Sprintf(`%s = state.macaroon.import(JSON.parse(%s))`, m.name, jsVal(string(data)))
+	if err := jsEval(expr, nil); err != nil {
+		return m, err
+	}
+	return m, nil
 }
 
 func (jsMacaroonPkg) UnmarshalBinary(data []byte) (Macaroon, error) {
@@ -64,7 +72,7 @@ func (m *jsMacaroon) MarshalBinary() ([]byte, error) {
 func (m *jsMacaroon) WithFirstPartyCaveat(caveatId string) (Macaroon, error) {
 	m = m.clone()
 	expr := fmt.Sprintf(`%s.addFirstPartyCaveat(%s)`,
-		m.name, jsString(caveatId))
+		m.name, jsVal(caveatId))
 	if err := jsEval(expr, nil); err != nil {
 		return nil, err
 	}
@@ -74,7 +82,7 @@ func (m *jsMacaroon) WithFirstPartyCaveat(caveatId string) (Macaroon, error) {
 func (m *jsMacaroon) WithThirdPartyCaveat(rootKey []byte, caveatId string, loc string) (Macaroon, error) {
 	m = m.clone()
 	expr := fmt.Sprintf(`%s.addThirdPartyCaveat(%s, %s, %s)`,
-		m.name, jsBits(rootKey), jsString(caveatId), jsString(loc))
+		m.name, jsBits(rootKey), jsVal(caveatId), jsVal(loc))
 	if err := jsEval(expr, nil); err != nil {
 		return nil, err
 	}
@@ -91,8 +99,20 @@ func (m *jsMacaroon) Bind(discharge Macaroon) (Macaroon, error) {
 	return m, nil
 }
 
-func (m *jsMacaroon) Verify(rootKey []byte, check func(caveat string) error, discharges []Macaroon) error {
-	return fmt.Errorf("unimplemented")
+func (m *jsMacaroon) Verify(rootKey []byte, check Checker, discharges []Macaroon) error {
+	dischargeNames := make([]string, len(discharges))
+	for i, m := range discharges {
+		dischargeNames[i] = m.(*jsMacaroon).name
+	}
+	checkFunc := fmt.Sprintf(`function(cav) {
+		var table = %s;
+		if(table[cav] === true){
+			return null;
+		}
+		return new Error("condition not satisfied")
+	}`, jsVal(check))
+	expr := fmt.Sprintf(`%s.verify(%s, %s, [%s])`, m.name, jsBits(rootKey), checkFunc, strings.Join(dischargeNames, ", "))
+	return jsEval(expr, nil)
 }
 
 func (m *jsMacaroon) Signature() []byte {
@@ -121,12 +141,12 @@ func jsBits(data []byte) string {
 	return fmt.Sprintf(`state.sjcl.codec.base64.toBits(%q)`, base64.StdEncoding.EncodeToString(data))
 }
 
-func jsString(s string) string {
-	data, err := json.Marshal(s)
+func jsVal(x interface{}) []byte {
+	data, err := json.Marshal(x)
 	if err != nil {
 		panic(err)
 	}
-	return string(data)
+	return data
 }
 
 var (

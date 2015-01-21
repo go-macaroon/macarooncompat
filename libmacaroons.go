@@ -47,14 +47,14 @@ func (m libMacaroon) Bind(primary Macaroon) (Macaroon, error) {
 	return libMacaroon{m1}, nil
 }
 
-func (m libMacaroon) Verify(rootKey []byte, check func(caveat string) error, discharges []Macaroon) error {
+func (m libMacaroon) Verify(rootKey []byte, check Checker, discharges []Macaroon) error {
 	discharges1 := make([]*macaroons.Macaroon, len(discharges))
 	for i, m := range discharges {
 		discharges1[i] = m.(libMacaroon).Macaroon
 	}
 	v := macaroons.NewVerifier()
 	if err := v.SatisfyGeneral(func(caveat string) bool {
-		return check(caveat) == nil
+		return check[caveat]
 	}); err != nil {
 		return err
 	}
