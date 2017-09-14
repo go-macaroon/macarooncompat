@@ -49,6 +49,7 @@ func (s *suite) SetUpTest(c *gc.C) {
 var signatureTests = []struct {
 	about           string
 	macaroon        macaroonSpec
+	exclude         exclude
 	expectSignature string
 }{{
 	about: "no caveats, from libmacaroons example",
@@ -122,6 +123,9 @@ var signatureTests = []struct {
 			location:  "http://auth.mybank/",
 		}},
 	},
+	exclude: exclude{
+		mcompat.ImplLibMacaroons2: `cannot fake random nonce generator`,
+	},
 	expectSignature: "d27db2fd1f22760e4c3dae8137e2d8fc1df6c0741c18aed4b97256bf78d1f55c",
 }}
 
@@ -134,7 +138,7 @@ func (*suite) TestSignature(c *gc.C) {
 				c.Check(fmt.Sprintf("%x", m.Signature()), gc.Equals, test.expectSignature)
 			}
 			return m.Signature(), nil
-		})
+		}, test.exclude)
 	}
 }
 
@@ -162,12 +166,14 @@ func (*suite) TestBind(c *gc.C) {
 		// example 2 from libmacaroons README
 		c.Check(fmt.Sprintf("%x", sig), gc.Equals, "2eb01d0dd2b4475330739140188648cf25dda0425ea9f661f1574ca0a9eac54e")
 		return sig, nil
+	}, exclude{
+		mcompat.ImplLibMacaroons2: `cannot fake random nonce generator`,
 	})
 }
 
 type conditionTest struct {
 	conditions    map[string]bool
-	expectFailure []mcompat.Implementation
+	expectFailure exclude
 	expectErr     string
 }
 
@@ -282,21 +288,31 @@ var verifyTests = []struct {
 			"splendid":         true,
 			"top of the world": true,
 		},
-		expectFailure: []mcompat.Implementation{mcompat.ImplLibMacaroons},
-		expectErr:     `discharge macaroon "bob-is-great" was not used`,
+		expectFailure: exclude{
+			mcompat.ImplLibMacaroons2: `does not check unused`,
+			mcompat.ImplPyMacaroons2:  `does not check unused`,
+			mcompat.ImplPyMacaroons3:  `does not check unused`,
+		},
+		expectErr: `discharge macaroon "bob-is-great" was not used`,
 	}, {
 		conditions: map[string]bool{
 			"wonderful":        true,
 			"splendid":         false,
 			"top of the world": true,
 		},
-		expectFailure: []mcompat.Implementation{mcompat.ImplLibMacaroons},
-		expectErr:     `condition "splendid" not met`,
+		expectFailure: exclude{
+			mcompat.ImplLibMacaroons2: `doesn't check all the discharge macaroons (arguably correctly)`,
+		},
+		expectErr: `condition "splendid" not met`,
 	}, {
 		conditions: map[string]bool{
 			"wonderful":        true,
 			"splendid":         true,
 			"top of the world": false,
+		},
+		expectFailure: exclude{
+			mcompat.ImplPyMacaroons2: `doesn't check all the discharge macaroons (arguably correctly)`,
+			mcompat.ImplPyMacaroons3: `doesn't check all the discharge macaroons (arguably correctly)`,
 		},
 		expectErr: `discharge macaroon "bob-is-great" was not used`,
 	}},
@@ -329,8 +345,12 @@ var verifyTests = []struct {
 		id:       "bob-is-great",
 	}},
 	conditions: []conditionTest{{
-		expectFailure: []mcompat.Implementation{mcompat.ImplLibMacaroons},
-		expectErr:     `discharge macaroon "bob-is-great" was used more than once`,
+		expectFailure: exclude{
+			mcompat.ImplLibMacaroons2: `doesn't check multiple use`,
+			mcompat.ImplPyMacaroons2:  `doesn't check multiple use`,
+			mcompat.ImplPyMacaroons3:  `doesn't check multiple use`,
+		},
+		expectErr: `discharge macaroon "bob-is-great" was used more than once`,
 	}},
 }, {
 	about: "recursive third party caveat",
@@ -467,8 +487,12 @@ var verifyTests = []struct {
 		id:      "unused",
 	}},
 	conditions: []conditionTest{{
-		expectFailure: []mcompat.Implementation{mcompat.ImplLibMacaroons},
-		expectErr:     `discharge macaroon "unused" was not used`,
+		expectFailure: exclude{
+			mcompat.ImplLibMacaroons2: `doesn't check unused`,
+			mcompat.ImplPyMacaroons2:  `doesn't check unused`,
+			mcompat.ImplPyMacaroons3:  `doesn't check unused`,
+		},
+		expectErr: `discharge macaroon "unused" was not used`,
 	}},
 }}
 
@@ -534,35 +558,27 @@ var recursiveThirdPartyCaveatMacaroons = []macaroonSpec{{
 
 func (*suite) TestVerify(c *gc.C) {
 	for i, test := range verifyTests {
-		c.Logf("test %d: %s", i, test.about)
-
 		for _, impl := range mcompat.Implementations {
-			c.Logf("- implementation: %s", impl.Name)
+			c.Logf("\nimplementation %s", impl.Name)
 			rootKey, macaroons := makeMacaroons(impl.Pkg, test.macaroons)
 			for _, cond := range test.conditions {
-				c.Logf("-- conditions %#v", cond.conditions)
+				c.Logf("\n-- test %d: %s; %s; %#v", i, test.about, impl.Name, cond.conditions)
 				err := macaroons[0].Verify(
 					rootKey,
 					cond.conditions,
 					macaroons[1:],
 				)
-				expectFail := false
-				for _, fimpl := range cond.expectFailure {
-					if fimpl == impl.Name {
-						expectFail = true
-					}
-				}
-				if expectFail {
+				if cond.expectFailure.excluded(impl.Name) {
 					if cond.expectErr != "" {
-						c.Assert(err, gc.IsNil, gc.Commentf("unexpected success"))
+						c.Check(err, gc.IsNil, gc.Commentf("unexpected failure (usual error: %v)", cond.expectErr))
 					} else {
-						c.Assert(err, gc.NotNil, gc.Commentf("unexpected success"))
+						c.Check(err, gc.NotNil, gc.Commentf("unexpected success"))
 					}
 				} else {
 					if cond.expectErr != "" {
-						c.Assert(err, gc.NotNil)
+						c.Check(err, gc.NotNil, gc.Commentf("expected error %q", cond.expectErr))
 					} else {
-						c.Assert(err, gc.IsNil)
+						c.Check(err, gc.IsNil)
 					}
 				}
 			}
@@ -618,6 +634,11 @@ func (*suite) TestSerialization(c *gc.C) {
 	for i, test := range serializationTests {
 		c.Logf("\ntest %d: %s", i, test.about)
 		for _, impl := range mcompat.Implementations {
+			if impl.Name == mcompat.ImplLibMacaroons2 {
+				// Note that libmacaroons doesn't currently support the V1 JSON format.
+				// See https://github.com/rescrv/libmacaroons/issues/49
+				continue
+			}
 			c.Logf("check %s", impl.Name)
 			pkg := impl.Pkg
 			m := makeMacaroon(pkg, test.macaroon)
@@ -640,6 +661,8 @@ func (*suite) TestSerialization(c *gc.C) {
 				data, err = gom.MarshalJSON()
 				c.Assert(err, gc.IsNil)
 				return string(data), nil
+			}, exclude{
+				mcompat.ImplLibMacaroons2: `libmacaroons doesn't currently support the V1 JSON format.`,
 			})
 			c.Logf("}")
 		}
@@ -662,15 +685,19 @@ func macStr(m mcompat.Macaroon) string {
 	return string(data)
 }
 
-func checkConsistency(c *gc.C, f func(mcompat.Package) (interface{}, error)) {
+func checkConsistency(c *gc.C, f func(mcompat.Package) (interface{}, error), excludeImpls exclude) {
 	impls := mcompat.Implementations
+	gotVal := false
 	var firstVal interface{}
 	var firstErr error
 	for i, impl := range impls {
+		if excludeImpls.excluded(impl.Name) {
+			continue
+		}
 		c.Logf("consistency check %d: %s", i, impl.Name)
 		val, err := f(impl.Pkg)
-		if i == 0 {
-			firstVal, firstErr = val, err
+		if !gotVal {
+			firstVal, firstErr, gotVal = val, err, true
 			continue
 		}
 		if firstErr != nil {
@@ -683,7 +710,7 @@ func checkConsistency(c *gc.C, f func(mcompat.Package) (interface{}, error)) {
 		if err != nil {
 			c.Errorf("%s failed unexpectedly with error %#v", impls[i].Name, err)
 		} else {
-			c.Check(val, jc.DeepEquals, firstVal)
+			c.Check(val, jc.DeepEquals, firstVal, gc.Commentf("%s is inconsistent with %s", impls[i].Name, impls[0].Name))
 		}
 	}
 }
@@ -736,6 +763,15 @@ func makeMacaroon(pkg mcompat.Package, mspec macaroonSpec) mcompat.Macaroon {
 		}
 	}
 	return m
+}
+
+// exclude specifies a set of implementations to exclude,
+// with associated reasons for the exclusion.
+type exclude map[mcompat.Implementation]string
+
+func (e exclude) excluded(impl mcompat.Implementation) bool {
+	_, ok := e[impl]
+	return ok
 }
 
 type zeroReader struct{}
