@@ -7,15 +7,15 @@ import (
 	"gopkg.in/macaroon.v1"
 )
 
-type goMacaroon struct {
+type goMacaroonV1 struct {
 	*macaroon.Macaroon
 }
 
-func (m goMacaroon) clone() goMacaroon {
-	return goMacaroon{m.Macaroon.Clone()}
+func (m goMacaroonV1) clone() goMacaroonV1 {
+	return goMacaroonV1{m.Macaroon.Clone()}
 }
 
-func (m goMacaroon) WithFirstPartyCaveat(caveatId string) (Macaroon, error) {
+func (m goMacaroonV1) WithFirstPartyCaveat(caveatId string) (Macaroon, error) {
 	m = m.clone()
 	if err := m.Macaroon.AddFirstPartyCaveat(caveatId); err != nil {
 		return nil, err
@@ -23,7 +23,7 @@ func (m goMacaroon) WithFirstPartyCaveat(caveatId string) (Macaroon, error) {
 	return m, nil
 }
 
-func (m goMacaroon) WithThirdPartyCaveat(rootKey []byte, caveatId string, loc string) (Macaroon, error) {
+func (m goMacaroonV1) WithThirdPartyCaveat(rootKey []byte, caveatId string, loc string) (Macaroon, error) {
 	m = m.clone()
 	if err := m.Macaroon.AddThirdPartyCaveat(rootKey, caveatId, loc); err != nil {
 		return nil, err
@@ -31,42 +31,42 @@ func (m goMacaroon) WithThirdPartyCaveat(rootKey []byte, caveatId string, loc st
 	return m, nil
 }
 
-func (m goMacaroon) Bind(primary Macaroon) (Macaroon, error) {
+func (m goMacaroonV1) Bind(primary Macaroon) (Macaroon, error) {
 	m = m.clone()
 	m.Macaroon.Bind(primary.Signature())
 	return m, nil
 }
 
-func (m goMacaroon) Verify(rootKey []byte, check Checker, discharges []Macaroon) error {
+func (m goMacaroonV1) Verify(rootKey []byte, check Checker, discharges []Macaroon) error {
 	discharges1 := make([]*macaroon.Macaroon, len(discharges))
 	for i, m := range discharges {
-		discharges1[i] = m.(goMacaroon).Macaroon
+		discharges1[i] = m.(goMacaroonV1).Macaroon
 	}
 	return m.Macaroon.Verify(rootKey, check.Check, discharges1)
 }
 
-type goMacaroonPackage struct{}
+type goMacaroonV1Package struct{}
 
-func (goMacaroonPackage) New(rootKey []byte, id, loc string) (Macaroon, error) {
+func (goMacaroonV1Package) New(rootKey []byte, id, loc string) (Macaroon, error) {
 	m, err := macaroon.New(rootKey, id, loc)
 	if err != nil {
 		return nil, err
 	}
-	return goMacaroon{m}, nil
+	return goMacaroonV1{m}, nil
 }
 
-func (goMacaroonPackage) UnmarshalJSON(data []byte) (Macaroon, error) {
+func (goMacaroonV1Package) UnmarshalJSON(data []byte) (Macaroon, error) {
 	var m macaroon.Macaroon
 	if err := m.UnmarshalJSON(data); err != nil {
 		return nil, err
 	}
-	return goMacaroon{&m}, nil
+	return goMacaroonV1{&m}, nil
 }
 
-func (goMacaroonPackage) UnmarshalBinary(data []byte) (Macaroon, error) {
+func (goMacaroonV1Package) UnmarshalBinary(data []byte) (Macaroon, error) {
 	var m macaroon.Macaroon
 	if err := m.UnmarshalBinary(data); err != nil {
 		return nil, err
 	}
-	return goMacaroon{&m}, nil
+	return goMacaroonV1{&m}, nil
 }
